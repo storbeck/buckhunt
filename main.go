@@ -159,7 +159,7 @@ func analyzeBucket(bucketName string, quietMode bool) Result {
 	bucketURL := fmt.Sprintf("http://%s.s3.amazonaws.com", bucketName)
 
 	// First check AWS access
-	awsRead, files, _ := checkAwsAccess(bucketName)
+	awsRead, files, _ := checkAwsAccess("s3://" + bucketName)
 	if awsRead {
 		result.found = true
 		result.awsRead = true
@@ -264,6 +264,16 @@ func processResults(results <-chan Result, stats *Stats, quietMode bool, total i
 			break
 		}
 	}
+
+	if quietMode {
+		fmt.Printf("# Summary: %d tested, %d found (%d readable, %d writable, %d aws), %d not found\n",
+			atomic.LoadInt32(&stats.total), 
+			atomic.LoadInt32(&stats.found), 
+			atomic.LoadInt32(&stats.withRead), 
+			atomic.LoadInt32(&stats.withWrite), 
+			atomic.LoadInt32(&stats.withAwsRead), 
+			atomic.LoadInt32(&stats.notFound))
+	}
 }
 
 func main() {
@@ -311,15 +321,16 @@ func main() {
 		}
 		close(jobs)
 
-		go processResults(results, stats, *quietMode, len(domains))
+		var wgResults sync.WaitGroup
+		wgResults.Add(1)
+		go func() {
+			processResults(results, stats, *quietMode, len(domains))
+			wgResults.Done()
+		}()
 
 		wg.Wait()
 		close(results)
-
-		if *quietMode {
-			fmt.Printf("# Summary: %d tested, %d found (%d readable, %d writable, %d aws), %d not found\n",
-				stats.total, stats.found, stats.withRead, stats.withWrite, stats.withAwsRead, stats.notFound)
-		}
+		wgResults.Wait()
 	} else {
 		args := flag.Args()
 		if len(args) != 1 {
@@ -337,8 +348,33 @@ func main() {
 
 		domain := cleanDomain(args[0])
 		if domain != "" {
-			result := analyzeBucket(domain, *quietMode)
-			stats.increment(result.found, result.canRead, result.canWrite, result.awsRead)
+			jobs := make(chan string, 1)
+			results := make(chan Result, 1)
+
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go worker(jobs, results, *quietMode, &wg)
+
+			jobs <- domain
+			close(jobs)
+
+			var wgResults sync.WaitGroup
+			wgResults.Add(1)
+			go func() {
+				processResults(results, stats, *quietMode, 1)
+				wgResults.Done()
+			}()
+
+			wg.Wait()
+			close(results)
+			wgResults.Wait()
 		}
 	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
