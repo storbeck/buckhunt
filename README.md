@@ -3,6 +3,9 @@
 
 A simple tool to check S3 buckets for public access and download their contents.
 
+![duck_hunt_31623__90557](https://github.com/user-attachments/assets/9c953842-1c24-4425-9d3d-1f75f66fc33e)
+
+
 ## Features
 
 - Check if an S3 bucket exists
