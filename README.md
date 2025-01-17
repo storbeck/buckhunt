@@ -9,69 +9,73 @@ A simple tool to check S3 buckets for public access and download their contents.
 ## Features
 
 - Check if an S3 bucket exists
-- Test for public read/write permissions
-- List bucket contents if readable
+- Test for public read/write permissions via HTTP
+- Check access via AWS credentials
+- List bucket contents (both public and AWS-authenticated)
 - Option to download entire bucket contents recursively
+- Parallel processing for bulk checking
 
 ## Usage
 
 Single bucket check with full output:
 ```bash
-❯ ./buckhunt flaws.cloud                                                      
+❯ ./buckhunt level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud
 
-[+] Checking s3://flaws.cloud
-[+] Public Read:  true
+[+] Checking s3://level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud
+[+] Public Read:  false
 [+] Public Write: false
+[+] AWS Read:     true
 
-Files:
-2017-03-14 03:00:38     2575 bytes      hint1.html
-2017-03-03 04:05:17     1707 bytes      hint2.html
-2017-03-03 04:05:11     1101 bytes      hint3.html
-2024-02-22 02:32:41     2861 bytes      index.html
-2018-07-10 16:47:16     15979 bytes     logo.png
-2017-02-27 01:59:28     46 bytes        robots.txt
-2017-02-27 01:59:30     1051 bytes      secret-dd02c7c.html
+Files (via AWS):
+2017-02-26 21:02:15     80751 bytes     everyone.png
+2017-03-02 22:47:17     1433 bytes      hint1.html
+2017-02-26 21:04:39     1035 bytes      hint2.html
+2017-02-26 21:02:14     2786 bytes      index.html
+2017-02-26 21:02:14     26 bytes        robots.txt
+2017-02-26 21:02:15     1051 bytes      secret-e4443fc.html
 
 Download bucket contents? [y/N]: y
-[+] Downloading bucket contents to directory: flaws.cloud
-download: s3://flaws.cloud/hint2.html to flaws.cloud/hint2.html
-download: s3://flaws.cloud/hint3.html to flaws.cloud/hint3.html
-download: s3://flaws.cloud/hint1.html to flaws.cloud/hint1.html
-download: s3://flaws.cloud/robots.txt to flaws.cloud/robots.txt
-download: s3://flaws.cloud/index.html to flaws.cloud/index.html 
-download: s3://flaws.cloud/logo.png to flaws.cloud/logo.png      
-download: s3://flaws.cloud/secret-dd02c7c.html to flaws.cloud/secret-dd02c7c.html
-[+] Download completed successfully
+[+] Downloading bucket contents to directory: level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud
+...
 ```
 
 Bulk checking with quiet mode:
 ```bash
-❯ cat domains.txt | ./buckhunt -q
-flaws.cloud,true,false
-level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud,true,false
-# Summary: 2 tested, 2 found (2 readable, 0 writable), 0 not found
+❯ cat domains.txt | ./buckhunt -q -w 20
+flaws.cloud,true,false,false
+level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud,false,false,true
+# Summary: 2 tested, 2 found (1 readable, 0 writable, 1 aws), 0 not found
 ```
 
 ## Flags
 
-- `-q`: Quiet mode - outputs in CSV format (domain,read,write) for accessible buckets only, with a summary line
+- `-q`: Quiet mode - outputs in CSV format (domain,public_read,public_write,aws_read) for accessible buckets only
+- `-w`: Number of concurrent workers for parallel processing (default: 10, max: 100)
 
 ## Output Format
 
 ### Standard Mode
 - Shows detailed information about each bucket
-- Lists files with timestamps and sizes
+- Displays public and AWS access status
+- Lists files with timestamps and sizes (from HTTP or AWS depending on access)
 - Prompts for downloading bucket contents
 
 ### Quiet Mode (-q)
-- CSV format: `domain,read,write`
-- Only shows accessible buckets (read or write permissions)
+- CSV format: `domain,public_read,public_write,aws_read`
+- Only shows accessible buckets (public or AWS access)
 - Ends with a summary line starting with `#` showing:
   - Total buckets tested
   - Number of buckets found
-  - Number with read access
-  - Number with write access
+  - Number with public read access
+  - Number with public write access
+  - Number accessible via AWS
   - Number not found
+
+### Performance
+- Uses Go routines for parallel processing
+- Default 10 concurrent workers, configurable with `-w`
+- Automatically scales workers based on input size
+- Example: `cat domains.txt | ./buckhunt -q -w 20`
 
 ## Requirements
 
