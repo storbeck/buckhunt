@@ -23,8 +23,12 @@ type S3ListBucketResult struct {
 }
 
 func checkBucketACL(bucketURL string) (bool, bool, error) {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
 	// Check GET (read) permission
-	respGet, err := http.Get(bucketURL)
+	respGet, err := client.Get(bucketURL)
 	if err != nil {
 		return false, false, err
 	}
@@ -38,7 +42,6 @@ func checkBucketACL(bucketURL string) (bool, bool, error) {
 		return canRead, false, err
 	}
 
-	client := &http.Client{}
 	respPut, err := client.Do(req)
 	if err != nil {
 		return canRead, false, err
@@ -50,13 +53,11 @@ func checkBucketACL(bucketURL string) (bool, bool, error) {
 }
 
 func downloadBucket(bucketName string) error {
-	// Create directory
 	err := os.MkdirAll(bucketName, 0755)
 	if err != nil {
 		return fmt.Errorf("failed to create directory: %v", err)
 	}
 
-	// Use AWS CLI to download recursively
 	fmt.Printf("[+] Downloading bucket contents to directory: %s\n", bucketName)
 	cmd := exec.Command("aws", "s3", "sync", "s3://"+bucketName, bucketName)
 	cmd.Stdout = os.Stdout
@@ -69,13 +70,20 @@ func analyzeBucket(bucketName string, quietMode bool) {
 		fmt.Printf("\n[+] Checking s3://%s\n", bucketName)
 	}
 
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
 	bucketURL := fmt.Sprintf("http://%s.s3.amazonaws.com", bucketName)
 
 	// Check if bucket exists
-	resp, err := http.Head(bucketURL)
+	resp, err := client.Head(bucketURL)
 	if err != nil {
 		if !quietMode {
 			fmt.Printf("[-] Error: %v\n", err)
+		}
+		if quietMode {
+			fmt.Printf("%s,false,false\n", bucketName)
 		}
 		return
 	}
@@ -85,20 +93,35 @@ func analyzeBucket(bucketName string, quietMode bool) {
 		if !quietMode {
 			fmt.Println("[-] Bucket does not exist")
 		}
+		if quietMode {
+			fmt.Printf("%s,false,false\n", bucketName)
+		}
 		return
 	}
 
 	// Check permissions
-	canRead, canWrite, _ := checkBucketACL(bucketURL)
+	canRead, canWrite, err := checkBucketACL(bucketURL)
+	if err != nil {
+		if !quietMode {
+			fmt.Printf("[-] Error checking permissions: %v\n", err)
+		}
+		if quietMode {
+			fmt.Printf("%s,false,false\n", bucketName)
+		}
+		return
+	}
+
 	if !canRead && !canWrite {
 		if !quietMode {
 			fmt.Println("[-] Bucket exists but is not public")
+		}
+		if quietMode {
+			fmt.Printf("%s,false,false\n", bucketName)
 		}
 		return
 	}
 
 	if quietMode {
-		// In quiet mode, just output in format: domain,read,write
 		fmt.Printf("%s,%v,%v\n", bucketName, canRead, canWrite)
 		return
 	}
@@ -110,10 +133,8 @@ func analyzeBucket(bucketName string, quietMode bool) {
 		return
 	}
 
-	// Only proceed with listing and download option if not in quiet mode
 	if !quietMode {
-		// List bucket contents
-		resp, err = http.Get(bucketURL)
+		resp, err = client.Get(bucketURL)
 		if err != nil {
 			return
 		}
@@ -138,7 +159,6 @@ func analyzeBucket(bucketName string, quietMode bool) {
 				item.Key)
 		}
 
-		// Ask to download
 		fmt.Print("\nDownload bucket contents? [y/N]: ")
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
@@ -156,9 +176,7 @@ func analyzeBucket(bucketName string, quietMode bool) {
 }
 
 func cleanDomain(domain string) string {
-	// Remove any protocol and get just the domain
 	domain = strings.TrimPrefix(strings.TrimPrefix(domain, "http://"), "https://")
-	// Remove any path
 	if idx := strings.Index(domain, "/"); idx != -1 {
 		domain = domain[:idx]
 	}
@@ -166,14 +184,13 @@ func cleanDomain(domain string) string {
 }
 
 func main() {
-	// Parse flags
 	quietMode := flag.Bool("q", false, "Quiet mode - only output CSV format: domain,read,write")
 	flag.Parse()
 
-	// Check if we have input from pipe
 	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		// Reading from pipe
+	isPipe := (stat.Mode() & os.ModeCharDevice) == 0
+
+	if isPipe {
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
 			domain := cleanDomain(scanner.Text())
@@ -181,8 +198,12 @@ func main() {
 				analyzeBucket(domain, *quietMode)
 			}
 		}
+
+		if err := scanner.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading from stdin: %v\n", err)
+			os.Exit(1)
+		}
 	} else {
-		// Normal command line argument
 		args := flag.Args()
 		if len(args) != 1 {
 			fmt.Println("Usage:")
