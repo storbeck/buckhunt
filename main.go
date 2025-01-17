@@ -22,6 +22,14 @@ type S3ListBucketResult struct {
 	} `xml:"Contents"`
 }
 
+type Stats struct {
+	total     int
+	found     int
+	notFound  int
+	withRead  int
+	withWrite int
+}
+
 func checkBucketACL(bucketURL string) (bool, bool, error) {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -65,7 +73,9 @@ func downloadBucket(bucketName string) error {
 	return cmd.Run()
 }
 
-func analyzeBucket(bucketName string, quietMode bool) {
+func analyzeBucket(bucketName string, quietMode bool, stats *Stats) {
+	stats.total++
+
 	if !quietMode {
 		fmt.Printf("\n[+] Checking s3://%s\n", bucketName)
 	}
@@ -79,25 +89,23 @@ func analyzeBucket(bucketName string, quietMode bool) {
 	// Check if bucket exists
 	resp, err := client.Head(bucketURL)
 	if err != nil {
+		stats.notFound++
 		if !quietMode {
 			fmt.Printf("[-] Error: %v\n", err)
-		}
-		if quietMode {
-			fmt.Printf("%s,false,false\n", bucketName)
 		}
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
+		stats.notFound++
 		if !quietMode {
 			fmt.Println("[-] Bucket does not exist")
 		}
-		if quietMode {
-			fmt.Printf("%s,false,false\n", bucketName)
-		}
 		return
 	}
+
+	stats.found++
 
 	// Check permissions
 	canRead, canWrite, err := checkBucketACL(bucketURL)
@@ -105,23 +113,25 @@ func analyzeBucket(bucketName string, quietMode bool) {
 		if !quietMode {
 			fmt.Printf("[-] Error checking permissions: %v\n", err)
 		}
-		if quietMode {
-			fmt.Printf("%s,false,false\n", bucketName)
-		}
 		return
+	}
+
+	if canRead {
+		stats.withRead++
+	}
+	if canWrite {
+		stats.withWrite++
 	}
 
 	if !canRead && !canWrite {
 		if !quietMode {
 			fmt.Println("[-] Bucket exists but is not public")
 		}
-		if quietMode {
-			fmt.Printf("%s,false,false\n", bucketName)
-		}
 		return
 	}
 
 	if quietMode {
+		// Only output buckets we can access
 		fmt.Printf("%s,%v,%v\n", bucketName, canRead, canWrite)
 		return
 	}
@@ -187,6 +197,8 @@ func main() {
 	quietMode := flag.Bool("q", false, "Quiet mode - only output CSV format: domain,read,write")
 	flag.Parse()
 
+	stats := &Stats{}
+
 	stat, _ := os.Stdin.Stat()
 	isPipe := (stat.Mode() & os.ModeCharDevice) == 0
 
@@ -195,13 +207,18 @@ func main() {
 		for scanner.Scan() {
 			domain := cleanDomain(scanner.Text())
 			if domain != "" {
-				analyzeBucket(domain, *quietMode)
+				analyzeBucket(domain, *quietMode, stats)
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading from stdin: %v\n", err)
 			os.Exit(1)
+		}
+
+		if *quietMode {
+			fmt.Printf("# Summary: %d tested, %d found (%d readable, %d writable), %d not found\n", 
+				stats.total, stats.found, stats.withRead, stats.withWrite, stats.notFound)
 		}
 	} else {
 		args := flag.Args()
@@ -219,7 +236,7 @@ func main() {
 
 		domain := cleanDomain(args[0])
 		if domain != "" {
-			analyzeBucket(domain, *quietMode)
+			analyzeBucket(domain, *quietMode, stats)
 		}
 	}
 }

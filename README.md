@@ -15,9 +15,9 @@ A simple tool to check S3 buckets for public access and download their contents.
 
 ## Usage
 
-Single domain with full output:
+Single bucket check with full output:
 ```bash
-❯ ./buckhunt http://flaws.cloud                                                      
+❯ ./buckhunt flaws.cloud                                                      
 
 [+] Checking s3://flaws.cloud
 [+] Public Read:  true
@@ -49,20 +49,32 @@ Bulk checking with quiet mode:
 ❯ cat domains.txt | ./buckhunt -q
 flaws.cloud,true,false
 level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud,true,false
+# Summary: 2 tested, 2 found (2 readable, 0 writable), 0 not found
 ```
 
 ## Flags
 
-- `-q`: Quiet mode - outputs in CSV format (domain,read,write) without listing files or prompting for download
+- `-q`: Quiet mode - outputs in CSV format (domain,read,write) for accessible buckets only, with a summary line
+
+## Output Format
+
+### Standard Mode
+- Shows detailed information about each bucket
+- Lists files with timestamps and sizes
+- Prompts for downloading bucket contents
+
+### Quiet Mode (-q)
+- CSV format: `domain,read,write`
+- Only shows accessible buckets (read or write permissions)
+- Ends with a summary line starting with `#` showing:
+  - Total buckets tested
+  - Number of buckets found
+  - Number with read access
+  - Number with write access
+  - Number not found
 
 ## Requirements
 
 - Go 1.21 or later
 - AWS CLI configured with credentials
 - AWS credentials with S3 read permissions
-
-## Notes
-
-- Downloaded bucket contents will be saved in a directory named after the bucket
-- The program uses AWS CLI's `s3 sync` command for downloading
-- All bucket contents are ignored by git (see .gitignore)
