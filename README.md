@@ -15,6 +15,7 @@ A simple tool to check S3 buckets for public access and download their contents.
 
 ## Usage
 
+Single domain with full output:
 ```bash
 ❯ ./buckhunt http://flaws.cloud                                                      
 
@@ -42,6 +43,17 @@ download: s3://flaws.cloud/logo.png to flaws.cloud/logo.png
 download: s3://flaws.cloud/secret-dd02c7c.html to flaws.cloud/secret-dd02c7c.html
 [+] Download completed successfully
 ```
+
+Bulk checking with quiet mode:
+```bash
+❯ cat domains.txt | ./buckhunt -q
+flaws.cloud,true,false
+level2-c8b217a33fcf1f839f6f1f73a00a9ae7.flaws.cloud,true,false
+```
+
+## Flags
+
+- `-q`: Quiet mode - outputs in CSV format (domain,read,write) without listing files or prompting for download
 
 ## Requirements
 
