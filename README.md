@@ -1,4 +1,4 @@
-# Buckhunt
+# Buck Hunt
 
 
 A simple tool to check S3 buckets for public access and download their contents.
