@@ -1,0 +1,18 @@
+# Ignore downloaded bucket contents
+*/
+# But keep the program files
+!buckhunt
+!main.go
+!.gitignore
+!README.md
+!go.mod
+!go.sum
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
