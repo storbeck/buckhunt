@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -36,6 +37,7 @@ type model struct {
 	done         bool
 	err          error
 	processing   bool
+	debug        string
 }
 
 func (m model) Init() tea.Cmd {
@@ -67,6 +69,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.testing = msg.domain
 		return m, nil
+	case string: // debug message
+		m.debug = msg
+		return m, nil
 	case bool: // completion signal
 		m.processing = false
 		m.done = true
@@ -92,6 +97,11 @@ func (m model) View() string {
 	// Testing status
 	if m.processing && m.testing != "" {
 		s.WriteString("\n" + styleDim.Render(fmt.Sprintf("Testing: %s", m.testing)))
+	}
+
+	// Debug info
+	if m.debug != "" {
+		s.WriteString("\n" + styleDim.Render(m.debug))
 	}
 
 	// Summary when done
@@ -224,47 +234,97 @@ func main() {
 
 		// Interactive mode with TUI
 		p := tea.NewProgram(model{processing: true})
-		
-		jobs := make(chan string, *workers)
-		results := make(chan Result, *workers)
+
+		jobs := make(chan string, *workers*2) // Increase buffer size
+		results := make(chan Result, *workers*2)
+		done := make(chan struct{})
 		var wg sync.WaitGroup
+		var jobCount atomic.Int32
 
 		// Start workers
 		for i := 0; i < *workers; i++ {
 			wg.Add(1)
-			go func() {
+			go func(id int) {
 				defer wg.Done()
 				for domain := range jobs {
-					result := analyzeBucket(domain)
-					results <- result
+					select {
+					case <-done:
+						return
+					default:
+						result := analyzeBucket(domain)
+						select {
+						case results <- result:
+							jobCount.Add(1)
+						case <-done:
+							return
+						}
+					}
 				}
-			}()
+				p.Send(fmt.Sprintf("Debug: Worker %d finished", id))
+			}(i)
 		}
 
 		// Process results and update UI
 		go func() {
 			for result := range results {
-				p.Send(result)
+				select {
+				case <-done:
+					return
+				default:
+					p.Send(result)
+				}
 			}
+			p.Send(fmt.Sprintf("Debug: Processed %d results", jobCount.Load()))
 			p.Send(false) // signal completion
 		}()
 
 		// Process completion
 		go func() {
 			wg.Wait()
+			p.Send("Debug: All workers finished")
 			close(results)
+			close(done)
 		}()
 
 		// Read domains
 		go func() {
+			defer func() {
+				close(jobs)
+				p.Send("Debug: Jobs channel closed")
+			}()
+
 			scanner := bufio.NewScanner(os.Stdin)
+			count := 0
+			skipped := 0
 			for scanner.Scan() {
-				domain := strings.TrimSpace(scanner.Text())
-				if domain != "" {
-					jobs <- domain
+				select {
+				case <-done:
+					p.Send(fmt.Sprintf("Debug: Scanner stopped at %d domains (%d skipped)", count, skipped))
+					return
+				default:
+					domain := strings.TrimSpace(scanner.Text())
+					if domain != "" && !strings.HasPrefix(domain, "*") {
+						count++
+						select {
+						case jobs <- domain:
+							if count%10 == 0 {
+								p.Send(fmt.Sprintf("Debug: Queued %d domains (skipped %d wildcards)", count, skipped))
+							}
+						case <-done:
+							p.Send(fmt.Sprintf("Debug: Stopped at %d domains (%d skipped)", count, skipped))
+							return
+						}
+					} else if strings.HasPrefix(domain, "*") {
+						skipped++
+					}
 				}
 			}
-			close(jobs)
+
+			if err := scanner.Err(); err != nil {
+				p.Send(fmt.Sprintf("Debug: Scanner error: %v", err))
+				return
+			}
+			p.Send(fmt.Sprintf("Debug: Total domains queued: %d (skipped %d wildcards)", count, skipped))
 		}()
 
 		if _, err := p.Run(); err != nil {
