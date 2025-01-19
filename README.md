@@ -3,7 +3,8 @@
 
 A simple tool to check S3 buckets for public access and download their contents.
 
-![duck_hunt_31623__90557](https://github.com/user-attachments/assets/9c953842-1c24-4425-9d3d-1f75f66fc33e)
+![demo](https://github.com/user-attachments/assets/fb85d4b6-2026-41f5-8c1a-0d2588ba42eb)
+
 
 
 ## Features
