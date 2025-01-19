@@ -2,13 +2,13 @@
 
 A tool to check S3 buckets for public access and AWS credentials access, featuring an interactive TUI mode for bulk checking.
 
-Interactve mode with a file input
+### Interactve mode with a file input
 ![demo](https://github.com/user-attachments/assets/fb85d4b6-2026-41f5-8c1a-0d2588ba42eb)
 
-Interactive mode with a stream input
+### Interactive mode with a stream input
 ![demo](https://github.com/user-attachments/assets/3841c0e3-fb37-4da4-9878-e8bbad807a46)
 
-Quiet mode
+### Quiet mode
 ![demo](https://github.com/user-attachments/assets/0f50abc1-13d9-4bbb-8a48-94be7ba8be4f)
 
 ## Features
